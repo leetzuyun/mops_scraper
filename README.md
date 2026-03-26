@@ -55,7 +55,7 @@ export REQUESTS_CA_BUNDLE=/path/to/corp-root.pem
 For quick testing, the GUI has a “Skip TLS verification (test only)” toggle. Use it only to validate connectivity—prefer the CA method for real runs.
 
 # How to run it on your device
-## Run with uv (recomended)
+## Run with uv (recommended)
 **install uv**
 ```
 # via pipx
