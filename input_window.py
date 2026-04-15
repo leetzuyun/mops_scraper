@@ -110,7 +110,7 @@ def run_all():
 
 # ==== UI ====
 root = tk.Tk()
-root.title("MOPS 新站｜彙總報表/財務報表 → 選擇式任務下載")
+root.title("MOPS 新站｜彙總報表/財務報表下載")
 root.geometry("860x560")
 
 frm = ttk.Frame(root, padding=12); frm.pack(fill="both", expand=True)

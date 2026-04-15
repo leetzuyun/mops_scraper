@@ -363,8 +363,8 @@ def run_jobs_newsite(
         tag = _tag(item, job)
         html, base = _fetch_html(session, item, job)
 
-        dbg = Path('debug_out'); dbg.mkdir(exist_ok=True)
-        (dbg / f"{tag}-result.html").write_text(html, encoding='utf-8')
+        # dbg = Path('debug_out'); dbg.mkdir(exist_ok=True)
+        # (dbg / f"{tag}-result.html").write_text(html, encoding='utf-8')
 
         # 1) 嘗試官方下載（不成功就忽略）
         dl = _find_download_action(BeautifulSoup(html, 'lxml'), base)

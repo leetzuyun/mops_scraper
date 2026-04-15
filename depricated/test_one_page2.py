@@ -1,5 +1,5 @@
 # test_one_page.py (v10) – 把整頁所有 table 寫成同一個 .xlsx；每個 table 一個 sheet
-# 仍保留：AJAX直抓、下載鈕/ server-java 下載、錯誤自動回退、--insecure/--host/--parameters/--force-table
+# AJAX直抓、下載鈕/ server-java 下載、錯誤自動回退、--insecure/--host/--parameters/--force-table
 # 檔名一律用查詢條件 (tag)；下載檔的副檔名依 Content-Type 決定，但檔名使用 tag
 
 import re, sys
