@@ -230,6 +230,14 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
     }
     
     INCLUDE_KEYWORDS = ["債", "固定收益", "有價證券"]
+    # SECTION_KEYWORDS = ["有價證券","資產"]
+
+    EXCLUDE_FIELD_MAP = {
+        "取得或處分私募有價證券公告": ["標的物之名稱及性質"],
+        "取得或處分資產公告":        ["證券名稱", "交易數量、每單位價格及交易總金額"],
+    }
+    EQUITY_KEYWORDS = ["普通股", "特別股", "優先股", "股票"]
+
 
     for category_name, ajax_path in TARGET_ANNOUNCEMENTS.items():
         if "t67sb07" in ajax_path:
@@ -273,6 +281,7 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
             session.close()
             continue
         soup = BeautifulSoup(html, "lxml")
+
         if "t67sb07" in ajax_path:
             all_report_sections = soup.find_all("table", class_="noBorder")
             matched_rows = []
@@ -283,44 +292,33 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                     continue
                 section_title = title_td.get_text(strip=True)
                 
-                # 第一層篩選：reportName 要有「有價證券」
                 if not any(k in section_title for k in INCLUDE_KEYWORDS):
                     print(f"   ⏭️ 跳過區塊：{section_title}")
                     continue
                 
                 print(f"   ✅ 命中區塊：{section_title}")
                 
-                # 找這個區塊對應的 hasBorder 資料表
-                next_sib = section_table.find_next_sibling()
-                while next_sib:
-                    if next_sib.name == "table" and "hasBorder" in next_sib.get("class", []):
-                        section_rows = next_sib.find_all("tr", class_=lambda x: x in ["even", "odd"])
+                next_noborder = section_table.find_next_sibling("table", class_="noBorder")
+                all_hasborder = section_table.find_all_next("table", class_="hasBorder")
+                
+                for candidate in all_hasborder:
+                    if next_noborder is None or candidate.find_next("table", class_="noBorder") == next_noborder or not candidate.find_next("table", class_="noBorder"):
+                        section_rows = candidate.find_all("tr", class_=lambda x: x in ["even", "odd"])
                         matched_rows.extend(section_rows)
                         print(f"   → 該區塊 {len(section_rows)} 筆")
                         break
-                    # 遇到下一個 noBorder 就停，不要跨區塊
-                    if next_sib.name == "table" and "noBorder" in next_sib.get("class", []):
-                        break
-                    next_sib = next_sib.find_next_sibling()
             
-            rows = matched_rows
-
+            rows = matched_rows  # ✅ 這行
+        
         else:
-            # t116sb02 沒有 reportName，直接拿全部 rows
             rows = soup.find_all("tr", class_=lambda x: x in ["even", "odd"])
-
+        
         if not rows:
             print(f" 📭 找不到符合條件的區塊資料")
             session.close()
             continue
 
-        EXCLUDE_FIELD_MAP = {
-            "取得或處分私募有價證券公告": ["標的物之名稱及性質"],
-            "取得或處分資產公告":        ["證券名稱", "交易數量、每單位價格及交易總金額"],
-        }
-        exclude_fields = EXCLUDE_FIELD_MAP.get(category_name, [])
-        all_extracted_records = []
-                
+        all_extracted_records = []     
         for row_idx, row in enumerate(rows):
             tds = row.find_all("td")
             
@@ -363,11 +361,12 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
             co_id = m_co_id.group(1)
             date1 = m_date1.group(1)
             seq_no = m_seq_no.group(1)
-            
+            print(f"   onclick 原文: {onclick_text}")
             print(f"🔍 發現潛在目標！[{co_id_name}] 日期: {pub_date} | 主旨: {subject[:25]}...")
             detail_ajax = m_action.group(1) if m_action else ajax_path
             ITEM_SPECS[detail_ajax] = {"ajax": detail_ajax}
-            if "t67sb07" in ajax_path:
+            if "t59sb03" in detail_ajax:
+                exclude_fields = ["證券名稱", "交易數量、每單位價格及交易總金額"]
                 payload_detail = {
                     "encodeURIComponent": "1",
                     "step": "2a",
@@ -386,28 +385,111 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                     "co_id1": "",
                     "co_id2": "",
                 }
-            else:
+            elif "t67sb03" in detail_ajax:
+                exclude_fields = ["標的物之名稱及性質"]
+                payload_detail = {
+                    "encodeURIComponent": "1",
+                    "step": "2",
+                    "firstin": "1",
+                    "TYPEK": typek,
+                    "YEAR": str(roc_year),
+                    "co_id": co_id,
+                    "DATE1": date1,
+                    "SKEY": seq_no,
+                }
+            elif "t116sb02" in detail_ajax:
+                exclude_fields = ["標的物之名稱及性質"]
                 payload_detail = {
                     "encodeURIComponent": "1",
                     "step": "2",
                     "firstin": "1",
                     "co_id": co_id,
-                    date1_key:  date1,   # ✅ 動態 key
-                    seq_no_key: seq_no,  # ✅ 動態 key
+                    date1_key: date1,
+                    seq_no_key: seq_no,
                     "TYPEK": typek,
                     "year": str(roc_year)
                 }
+            else:
+                exclude_fields = EXCLUDE_FIELD_MAP.get(category_name, [])
+                payload_detail = {
+                    "encodeURIComponent": "1",
+                    "step": "2",
+                    "firstin": "1",
+                    "co_id": co_id,
+                    date1_key: date1,
+                    seq_no_key: seq_no,
+                    "TYPEK": typek,
+                    "year": str(roc_year)
+                }
+            # if "t59sb03" in detail_ajax:
+            #     exclude_fields = ["證券名稱", "交易數量、每單位價格及交易總金額"]
+            # elif "t67sb03" in detail_ajax:
+            #     exclude_fields = ["標的物之名稱及性質"]
+            # elif "t116sb02" in detail_ajax:
+            #     exclude_fields = ["標的物之名稱及性質"]
+            # else:
+            #     exclude_fields = EXCLUDE_FIELD_MAP.get(category_name, [])
+                
+            # if "t67sb03" in detail_ajax:
+            #     payload_detail = {
+            #         "encodeURIComponent": "1",
+            #         "step": "2",           # ← 需要確認，先試 2
+            #         "firstin": "1",
+            #         "TYPEK": typek,
+            #         "YEAR": str(roc_year),
+            #         "co_id": co_id,
+            #         "DATE1": date1,
+            #         "SKEY": seq_no,
+            #     }
+            # elif "t67sb07" in ajax_path:
+            #     payload_detail = {
+            #         "encodeURIComponent": "1",
+            #         "step": "2a",
+            #         "firstin": "1",
+            #         "TYPEK": typek,
+            #         "YEAR": str(roc_year),
+            #         "MONTH": "all",
+            #         "SDAY": "1",
+            #         "EDAY": "31",
+            #         "co_id": co_id,
+            #         "DATE1": date1,
+            #         "SKEY": seq_no,
+            #         "kind": "",
+            #         "id": "",
+            #         "colorchg": "",
+            #         "co_id1": "",
+            #         "co_id2": "",
+            #     }
+            # else:
+            #     payload_detail = {
+            #         "encodeURIComponent": "1",
+            #         "step": "2",
+            #         "firstin": "1",
+            #         "co_id": co_id,
+            #         date1_key:  date1,
+            #         seq_no_key: seq_no,
+            #         "TYPEK": typek,
+            #         "year": str(roc_year)
+            #     }
             
             try:
                 detail_html = _fetch_old_site(session, detail_ajax, payload_detail)
+                print(f"   --- DETAIL HTML 長度={len(detail_html)} ---")
+                print(detail_html[:1000])
+
                 tables = pd.read_html(io.StringIO(detail_html), flavor="lxml")
-                
+
+                print(f"   --- tables 數量: {len(tables)} ---")
+                for i, t in enumerate(tables):
+                    print(f"   table[{i}] shape={t.shape}, 前兩列:")
+                    print(t.head(2).to_string())
+
                 if tables:
-                    df_detail = tables[0].dropna(how="all").fillna("")
+                    df_detail = tables[-1].dropna(how="all").fillna("")
                     exclude_flag = False
                                         
                     current_record = {col: "" for col in COLUMN_SPECS[category_name]}
-                    current_record["公司代號"] = co_id_name # 這裡直接存代號+名稱，比較直覺
+                    current_record["公司代號"] = co_id_name
                     current_record["主旨"] = subject
                     for idx, row_data in df_detail.iterrows():
                         cells = [str(cell).strip() for cell in row_data.values]
@@ -415,15 +497,13 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                             continue
                         field_title = cells[0].replace(" ", "")
                         field_value = cells[1]
-                        
-                        # 第三層篩選：指定欄位含「股」就排除
                         for ef in exclude_fields:
-                            if ef in field_title and "股" in field_value:
-                                exclude_flag = True
-                                break
+                            if ef.replace(" ", "") in field_title:
+                                if any(k in field_value for k in EQUITY_KEYWORDS):
+                                    exclude_flag = True
+                                    break
                         if exclude_flag:
                             break
-                        # 正常欄位擷取
                         for col_name in COLUMN_SPECS[category_name]:
                             if col_name in ["公司代號", "主旨"]:
                                 continue
@@ -433,21 +513,16 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                                 break
                                 
                     if exclude_flag:
-                        print(f"   ⚠️ [標的排除] 發現股權類資產，依規定放棄儲存。")
+                        print(f"   [標的排除] 發現股權類資產，依規定放棄儲存。")
                         continue
                     
-                    # 🎉 3. 通過所有檢驗，將這筆完整的橫式紀錄推入清單
                     all_extracted_records.append(current_record)
-                    print(f"   🎉 [核准擷取] 完美過濾！成功擷取資料。")
+                    print(f"   [核准擷取] 成功擷取資料。")
                     
             except Exception as e:
-                print(f"   ❌ 擷取詳細資料失敗 ({co_id}): {e}")
-                
+                print(f"   擷取詳細資料失敗 ({co_id}): {e}")               
             time.sleep(random.uniform(1.0, 2.0)) 
-            
         session.close()
-
-        # 💾 【最終寫入階段】將收集好的清單，整包交給外部模組處理
         save_records_to_excel(
             records=all_extracted_records, 
             category_name=category_name, 
