@@ -42,6 +42,42 @@ def get_feature_key(col_name: str) -> str:
     if "其他敘明" in col_name: return "其他敘明"
     return col_name
 
+def resolve_official_col_name(raw_col_name: str, category_name: str) -> str:
+    """
+    不管 MOPS 網頁上的欄位叫「證券名稱」還是「標的物...」，
+    都會自動轉換成該 category_name 在 COLUMN_SPECS 中規定的正確官方長檔名。
+    """
+    # 取得當前公告種類的標準欄位列表
+    specs = COLUMN_SPECS.get(category_name, [])
+    if not specs:
+        return raw_col_name
+    # 概念 1：標的名稱 (只要出現標的物或證券名稱，就去 specs 找對應的長字串)
+    if any(k in raw_col_name for k in ["標的物", "證券名稱"]):
+        return next((col for col in specs if "標的物" in col or "證券名稱" in col), raw_col_name)
+    # 概念 2：日期
+    if any(k in raw_col_name for k in ["事實發生日", "交易日期"]):
+        return next((col for col in specs if "事實發生日" in col or "交易日期" in col), raw_col_name)
+    # 概念 3：數量與金額
+    if any(k in raw_col_name for k in ["交易單位數量", "交易數量"]):
+        return next((col for col in specs if "數量" in col and "金額" in col), raw_col_name)
+    # 概念 4：累積持有
+    if "累積持有" in raw_col_name:
+        return next((col for col in specs if "累積持有" in col), raw_col_name)
+    # 概念 5：總資產與財務比例
+    if any(k in raw_col_name for k in ["私募有價證券投資", "公開發行公司", "總資產"]):
+        return next((col for col in specs if "總資產" in col or "營運資金" in col), raw_col_name)
+    # 概念 6：經理人與費用
+    if "經理人" in raw_col_name:
+        return next((col for col in specs if "經理人" in col), raw_col_name)
+    # 概念 7：目的用途
+    if "目的" in raw_col_name or "用途" in raw_col_name:
+        return next((col for col in specs if "目的" in col or "用途" in col), raw_col_name)
+    # 概念 8：其他
+    if "其他敘明" in raw_col_name:
+        return next((col for col in specs if "其他敘明" in col), raw_col_name)
+    # 如果完全無法分類，就回傳原抓取字串
+    return raw_col_name
+
 # --- 3. 匯出 Excel 的獨立函數 ---
 def save_records_to_excel(all_category_records: dict, download_dir: Path):
     # 檢查是否所有種類都沒有資料

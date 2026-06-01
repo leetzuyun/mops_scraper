@@ -13,7 +13,7 @@ from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 
 from lib.pdf_parser import extract_securities_table_from_bytes
-from lib.excel_writer import COLUMN_SPECS, get_feature_key, save_records_to_excel
+from lib.excel_writer import COLUMN_SPECS, resolve_official_col_name, save_records_to_excel
 
 try:
     from urllib3.exceptions import InsecureRequestWarning
@@ -237,7 +237,7 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
         "取得或處分私募有價證券公告": ["標的物之名稱及性質"],
         "取得或處分資產公告":        ["證券名稱", "交易數量、每單位價格及交易總金額"],
     }
-    EQUITY_KEYWORDS = ["普通股", "特別股", "優先股", "股票", "仟股"]
+    EQUITY_KEYWORDS = ["普通股", "特別股", "優先股", "股票", "仟股", "千股", "每股", " 股"]
 
     all_category_records: Dict[str, list] = {}
 
@@ -437,22 +437,22 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                         cells = [str(cell).strip() for cell in row_data.values]
                         if len(cells) < 2:
                             continue
+                        
                         field_title = cells[0].replace(" ", "")
                         field_value = cells[1]
+                        
                         for ef in exclude_fields:
                             if ef.replace(" ", "") in field_title:
-                                if any(k in field_value for k in EQUITY_KEYWORDS):
+                                if any(k in field_value for k in EQUITY_KEYWORDS) or re.search(r"[\d,]+\s*股", field_value):
                                     exclude_flag = True
                                     break
+                                    
                         if exclude_flag:
                             break
-                        for col_name in COLUMN_SPECS[category_name]:
-                            if col_name in ["公司代號", "主旨"]:
-                                continue
-                            feature_key = get_feature_key(col_name)
-                            if feature_key in field_title:
-                                current_record[col_name] = field_value
-                                break
+                        official_col_name = resolve_official_col_name(field_title, category_name)
+                        
+                        if official_col_name in current_record and official_col_name not in ["公司代號", "主旨"]:
+                            current_record[official_col_name] = field_value
                                 
                     if exclude_flag:
                         print(f"   [標的排除] 發現股權類資產，依規定放棄儲存。")
