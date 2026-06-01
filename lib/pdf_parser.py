@@ -6,7 +6,53 @@ import io
 def clean_cell_text(cell):
     if cell is None:
         return ""
-    return str(cell).replace('\n', '').strip()
+    # ✅ 保留換行，用特殊分隔符替換，之後展開用
+    return str(cell).replace('\n', '|NEWLINE|').strip()
+
+
+def _expand_merged_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    將同一儲存格內用 |NEWLINE| 分隔的多筆資料展開成多列。
+    以第一欄為基準決定要展開幾列。
+    """
+    expanded = []
+    
+    for _, row in df.iterrows():
+        # 以各欄的 |NEWLINE| 分割，找出最多幾筆
+        split_cells = [str(v).split('|NEWLINE|') for v in row]
+        max_lines = max(len(parts) for parts in split_cells)
+        
+        if max_lines <= 1:
+            # 單筆，直接清除分隔符後加入
+            expanded.append([v.replace('|NEWLINE|', ' ').strip() for v in row])
+            continue
+        
+        # 多筆，逐行展開
+        for line_idx in range(max_lines):
+            new_row = []
+            for parts in split_cells:
+                if line_idx < len(parts):
+                    val = parts[line_idx].strip()
+                else:
+                    # 該欄沒有這一行，沿用最後一個值（〃 同上邏輯）
+                    val = parts[-1].strip()
+                new_row.append(val)
+            expanded.append(new_row)
+    
+    return pd.DataFrame(expanded, columns=df.columns)
+
+
+def _resolve_ditto(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    將「〃」（同上符號）替換為上一列的同欄值。
+    """
+    df = df.copy()
+    for col in df.columns:
+        for i in range(1, len(df)):
+            if df.at[i, col] in ('〃', '″', '"', '同上', ''):
+                if df.at[i, col] == '〃' or df.at[i, col] == '″':
+                    df.at[i, col] = df.at[i - 1, col]
+    return df
 
 def extract_securities_table_from_bytes(pdf_bytes: bytes):
     """
@@ -105,8 +151,18 @@ def extract_securities_table_from_bytes(pdf_bytes: bytes):
     if all_table_rows and global_header:
         df = pd.DataFrame(all_table_rows, columns=global_header)
         df = df.dropna(how='all')
+        
+        # ✅ 展開多筆合併列
+        df = _expand_merged_rows(df)
+        
+        # ✅ 解析「〃」同上符號
+        df = _resolve_ditto(df)
+        
+        # ✅ 過濾全空列
+        df = df[df.apply(lambda r: any(v.strip() for v in r), axis=1)]
+        
         print(f"🎉 擷取成功！總共抓取 {len(df)} 筆資料。")
         return df
     else:
         print("❌ 未能成功解析出結構化表格資料。")
-        return None
+        return None  # ✅ 呼叫端已有接住，不會出錯

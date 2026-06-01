@@ -156,22 +156,24 @@ def _download_and_extract_table(session: requests.Session, html: str, base: str,
 
                 if pdf_bytes and extract_securities_table_from_bytes:
                     print(f" [處理中] 已將 PDF 載入記憶體，開始提取目標表格...")
-                    df_table = extract_securities_table_from_bytes(pdf_bytes)
-                    
-                    if df_table is not None and not df_table.empty:
+                    try:
+                        df_table = extract_securities_table_from_bytes(pdf_bytes)
+                    except Exception as parse_err:
+                        print(f" ⚠️ [WARN] PDF 解析發生錯誤: {parse_err}")
+                        df_table = None
+                    if df_table is None:
+                        print(f" ℹ️ [INFO] 此份報告中找不到『期末持有之重大有價證券』表格，略過。")
+                    elif df_table.empty:
+                        print(f" ⚠️ [WARN] 表格存在但內容為空，略過。")
+                    else:
                         s_tag = f"Q{clean_s}" if raw_season and str(raw_season).strip() else "ALL"
                         out_excel_name = f"{co_id}_{job.get('year')}_{s_tag}_重大有價證券.xlsx"
                         out_path = dl_dir / out_excel_name
-                        
                         df_table.to_excel(out_path, index=False, engine='openpyxl')
                         print(f" 🎉 [OK] 成功提取表格並儲存至: {out_path.name}")
-                        found_any = True
-                    else:
-                        print(" ❌ [WARN] PDF 讀取成功，但找不到目標表格內容")
-                        
+                        found_any = True                       
             except Exception as e:
-                print(f" ❌ [ERR] 處理 PDF 流程中斷: {e}")
-                
+                print(f" ❌ [ERR] 處理 PDF 流程中斷: {e}")                
     return found_any
 
 
@@ -229,15 +231,15 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
         "取得或處分資產公告": "/mops/web/ajax_t67sb07"
     }
     
-    INCLUDE_KEYWORDS = ["債", "固定收益", "有價證券"]
-    # SECTION_KEYWORDS = ["有價證券","資產"]
+    INCLUDE_KEYWORDS = ["債", "固定收益", "有價證券", "理財產品", "理財商品"]
 
     EXCLUDE_FIELD_MAP = {
         "取得或處分私募有價證券公告": ["標的物之名稱及性質"],
         "取得或處分資產公告":        ["證券名稱", "交易數量、每單位價格及交易總金額"],
     }
-    EQUITY_KEYWORDS = ["普通股", "特別股", "優先股", "股票"]
+    EQUITY_KEYWORDS = ["普通股", "特別股", "優先股", "股票", "仟股"]
 
+    all_category_records: Dict[str, list] = {}
 
     for category_name, ajax_path in TARGET_ANNOUNCEMENTS.items():
         if "t67sb07" in ajax_path:
@@ -308,7 +310,7 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                         print(f"   → 該區塊 {len(section_rows)} 筆")
                         break
             
-            rows = matched_rows  # ✅ 這行
+            rows = matched_rows
         
         else:
             rows = soup.find_all("tr", class_=lambda x: x in ["even", "odd"])
@@ -318,7 +320,8 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
             session.close()
             continue
 
-        all_extracted_records = []     
+        # all_extracted_records = []
+        category_records = []   
         for row_idx, row in enumerate(rows):
             tds = row.find_all("td")
             
@@ -361,8 +364,6 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
             co_id = m_co_id.group(1)
             date1 = m_date1.group(1)
             seq_no = m_seq_no.group(1)
-            print(f"   onclick 原文: {onclick_text}")
-            print(f"🔍 發現潛在目標！[{co_id_name}] 日期: {pub_date} | 主旨: {subject[:25]}...")
             detail_ajax = m_action.group(1) if m_action else ajax_path
             ITEM_SPECS[detail_ajax] = {"ajax": detail_ajax}
             if "t59sb03" in detail_ajax:
@@ -421,69 +422,10 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                     "TYPEK": typek,
                     "year": str(roc_year)
                 }
-            # if "t59sb03" in detail_ajax:
-            #     exclude_fields = ["證券名稱", "交易數量、每單位價格及交易總金額"]
-            # elif "t67sb03" in detail_ajax:
-            #     exclude_fields = ["標的物之名稱及性質"]
-            # elif "t116sb02" in detail_ajax:
-            #     exclude_fields = ["標的物之名稱及性質"]
-            # else:
-            #     exclude_fields = EXCLUDE_FIELD_MAP.get(category_name, [])
-                
-            # if "t67sb03" in detail_ajax:
-            #     payload_detail = {
-            #         "encodeURIComponent": "1",
-            #         "step": "2",           # ← 需要確認，先試 2
-            #         "firstin": "1",
-            #         "TYPEK": typek,
-            #         "YEAR": str(roc_year),
-            #         "co_id": co_id,
-            #         "DATE1": date1,
-            #         "SKEY": seq_no,
-            #     }
-            # elif "t67sb07" in ajax_path:
-            #     payload_detail = {
-            #         "encodeURIComponent": "1",
-            #         "step": "2a",
-            #         "firstin": "1",
-            #         "TYPEK": typek,
-            #         "YEAR": str(roc_year),
-            #         "MONTH": "all",
-            #         "SDAY": "1",
-            #         "EDAY": "31",
-            #         "co_id": co_id,
-            #         "DATE1": date1,
-            #         "SKEY": seq_no,
-            #         "kind": "",
-            #         "id": "",
-            #         "colorchg": "",
-            #         "co_id1": "",
-            #         "co_id2": "",
-            #     }
-            # else:
-            #     payload_detail = {
-            #         "encodeURIComponent": "1",
-            #         "step": "2",
-            #         "firstin": "1",
-            #         "co_id": co_id,
-            #         date1_key:  date1,
-            #         seq_no_key: seq_no,
-            #         "TYPEK": typek,
-            #         "year": str(roc_year)
-            #     }
-            
             try:
                 detail_html = _fetch_old_site(session, detail_ajax, payload_detail)
-                print(f"   --- DETAIL HTML 長度={len(detail_html)} ---")
-                print(detail_html[:1000])
-
                 tables = pd.read_html(io.StringIO(detail_html), flavor="lxml")
-
                 print(f"   --- tables 數量: {len(tables)} ---")
-                for i, t in enumerate(tables):
-                    print(f"   table[{i}] shape={t.shape}, 前兩列:")
-                    print(t.head(2).to_string())
-
                 if tables:
                     df_detail = tables[-1].dropna(how="all").fillna("")
                     exclude_flag = False
@@ -516,15 +458,16 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                         print(f"   [標的排除] 發現股權類資產，依規定放棄儲存。")
                         continue
                     
-                    all_extracted_records.append(current_record)
+                    category_records.append(current_record)
                     print(f"   [核准擷取] 成功擷取資料。")
-                    
             except Exception as e:
                 print(f"   擷取詳細資料失敗 ({co_id}): {e}")               
             time.sleep(random.uniform(1.0, 2.0)) 
+
         session.close()
-        save_records_to_excel(
-            records=all_extracted_records, 
-            category_name=category_name, 
+        all_category_records[category_name] = category_records
+
+    save_records_to_excel(
+            all_category_records=all_category_records, 
             download_dir=dl_dir
         )

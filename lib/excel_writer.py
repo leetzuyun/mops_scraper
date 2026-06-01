@@ -43,17 +43,24 @@ def get_feature_key(col_name: str) -> str:
     return col_name
 
 # --- 3. 匯出 Excel 的獨立函數 ---
-def save_records_to_excel(records: list, category_name: str, download_dir: Path):
-    """
-    接收爬蟲抓好的資料清單，將其轉為 DataFrame 並存成水平 Excel 檔案。
-    """
-    if not records:
-        print(f"🏁 【{category_name}】處理完畢，沒有符合條件的資料，不產生 Excel。")
+def save_records_to_excel(all_category_records: dict, download_dir: Path):
+    # 檢查是否所有種類都沒有資料
+    total = sum(len(v) for v in all_category_records.values())
+    if total == 0:
+        print(f"🏁 所有類別均無符合條件的資料，不產生 Excel。")
         return
 
-    df_final = pd.DataFrame(records)
-    excel_name = download_dir / f"[{category_name}]_整合總表.xlsx"
+    excel_name = download_dir / "取得或處分債券相關公告_整合總表.xlsx"
     
-    # 寫入 Excel
-    df_final.to_excel(excel_name, index=False, sheet_name=category_name)
-    print(f"🏁 【{category_name}】處理完畢！成功導出 {len(records)} 筆水平整合資料 💾 -> {excel_name.name}")
+    with pd.ExcelWriter(excel_name, engine="openpyxl") as writer:
+        for category_name, records in all_category_records.items():
+            if not records:
+                print(f"   ⚠️ 【{category_name}】無資料，略過此底稿。")
+                continue
+            
+            df_final = pd.DataFrame(records, columns=COLUMN_SPECS[category_name])
+            sheet_name = category_name[:31]
+            df_final.to_excel(writer, index=False, sheet_name=sheet_name)
+            print(f"   ✅ 【{category_name}】寫入 {len(records)} 筆")
+    
+    print(f"🏁 完成！已匯出至 💾 -> {excel_name.name}")
