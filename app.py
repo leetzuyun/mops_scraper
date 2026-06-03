@@ -40,7 +40,7 @@ def main(page: ft.Page):
         options=[ft.dropdown.Option(q) for q in ["Q1", "Q2", "Q3", "Q4"]],
     )
     
-    run_btn = ft.ElevatedButton(content=ft.Text("開始執行"), width=160, height=42)
+    run_btn = ft.Button(content=ft.Text("開始執行"), width=160, height=42)
     status_text = ft.Text(value="", color=ft.Colors.GREY_600, size=13)
 
     # 財報專用欄位列（動態顯示）
@@ -178,4 +178,4 @@ def main(page: ft.Page):
     )
 
 
-ft.app(target=main)
+ft.run(main)

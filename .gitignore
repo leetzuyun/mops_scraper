@@ -10,6 +10,9 @@ venv/
 # Environment variables
 .env
 
+#downloaded files 
+downloads/
+
 # OS / Editor
 .DS_Store
 Thumbs.db

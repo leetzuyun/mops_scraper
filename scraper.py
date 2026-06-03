@@ -12,7 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 
-from lib.pdf_parser import extract_securities_table_from_bytes
+from lib.pdf_parser_fix import extract_securities_table_from_bytes
 from lib.excel_writer import COLUMN_SPECS, resolve_official_col_name, save_records_to_excel
 
 try:
@@ -234,10 +234,10 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
     INCLUDE_KEYWORDS = ["債", "固定收益", "有價證券", "理財產品", "理財商品"]
 
     EXCLUDE_FIELD_MAP = {
-        "取得或處分私募有價證券公告": ["標的物之名稱及性質"],
-        "取得或處分資產公告":        ["證券名稱", "交易數量、每單位價格及交易總金額"],
+        "取得或處分私募有價證券公告": ["標的物之名稱及性質","證券名稱", "交易數量、每單位價格及交易總金額"],
+        "取得或處分資產公告":        ["標的物之名稱及性質","證券名稱", "交易數量、每單位價格及交易總金額"],
     }
-    EQUITY_KEYWORDS = ["普通股", "特別股", "優先股", "股票", "仟股", "千股", "每股", " 股"]
+    EQUITY_KEYWORDS = ["普通股", "特別股", "優先股", "股票", "仟股", "千股", "每股", " 股","金融股"]
 
     all_category_records: Dict[str, list] = {}
 
@@ -424,6 +424,7 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                 }
             try:
                 detail_html = _fetch_old_site(session, detail_ajax, payload_detail)
+                time.sleep(random.uniform(0.5,2))
                 tables = pd.read_html(io.StringIO(detail_html), flavor="lxml")
                 print(f"   --- tables 數量: {len(tables)} ---")
                 if tables:
@@ -440,7 +441,6 @@ def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "dow
                         
                         field_title = cells[0].replace(" ", "")
                         field_value = cells[1]
-                        
                         for ef in exclude_fields:
                             if ef.replace(" ", "") in field_title:
                                 if any(k in field_value for k in EQUITY_KEYWORDS) or re.search(r"[\d,]+\s*股", field_value):
