@@ -11,7 +11,7 @@ venv/
 .env
 
 #downloaded files 
-downloads/
+# downloads/
 
 # OS / Editor
 .DS_Store

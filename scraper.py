@@ -12,7 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 
-from lib.pdf_parser_fix import extract_securities_table_from_bytes
+from lib.pdf_parser_fix import extract_securities_pdf_pages
 from lib.excel_writer import COLUMN_SPECS, resolve_official_col_name, save_records_to_excel
 
 try:
@@ -105,6 +105,78 @@ def _fetch_old_site(session: requests.Session, item: str, payload: Dict) -> str:
 # ==============================================================================
 # 📂 模組一：財務報告書下載與解析流程
 # ==============================================================================
+# def _download_and_extract_table(session: requests.Session, html: str, base: str, job: Dict, dl_dir: Path) -> bool:
+#     soup = BeautifulSoup(html, 'lxml')
+#     raw_season = job.get("season")
+    
+#     clean_s = "ALL"
+#     season_keywords = []
+#     if raw_season and str(raw_season).strip():
+#         clean_s = str(raw_season).upper().replace('Q', '')
+#         season_keywords = [f"第{clean_s}季", f"Q{clean_s}"]
+#         if clean_s == '1': season_keywords.append("第一季")
+#         elif clean_s == '2': season_keywords.append("第二季")
+#         elif clean_s == '3': season_keywords.append("第三季")
+#         elif clean_s == '4': season_keywords.append("第四季")
+
+#     a_tags = soup.find_all("a", href=re.compile(r"readfile2"))
+#     found_any = False
+    
+#     for a_tag in a_tags:
+#         tr = a_tag.find_parent("tr")
+#         if not tr: continue
+#         row_text = tr.get_text(" ", strip=True)
+        
+#         if season_keywords and not any(k in row_text for k in season_keywords): continue
+#         if "合併" not in row_text or "英文版" in row_text: continue
+            
+#         href = a_tag.get("href", "")
+#         m = re.search(r'readfile2\(\s*["\']([^"\']+)["\']\s*,\s*["\']([^"\']+)["\']\s*,\s*["\']([^"\']+)["\']\s*\)', href)
+#         if m:
+#             kind, co_id, filename = m.groups()
+#             dl_url = "https://doc.twse.com.tw/server-java/t57sb01"
+#             data = {"step": "9", "kind": kind, "co_id": co_id, "filename": filename}
+            
+#             try:
+#                 # 🎯 重試點 2: 模擬點擊下載按鈕的中轉請求
+#                 r_transit = _request_with_retry(session, "POST", dl_url, data=data, timeout=(30, 120), verify=False)
+                
+#                 pdf_bytes = b""
+#                 if "<html" in r_transit.text.lower():
+#                     transit_soup = BeautifulSoup(r_transit.text, 'lxml')
+#                     pdf_link = transit_soup.find("a", href=re.compile(r"\.pdf$", re.I))
+#                     if pdf_link and pdf_link.get("href"):
+#                         real_pdf_url = urljoin("https://doc.twse.com.tw", pdf_link["href"])
+                        
+#                         # 🎯 重試點 3: 真正下載 PDF 串流檔案（檔案通常很大，給予 180 秒讀取超時）
+#                         r_pdf = _request_with_retry(session, "GET", real_pdf_url, timeout=(30, 180), verify=False)
+#                         pdf_bytes = r_pdf.content
+#                 else:
+#                     pdf_bytes = r_transit.content
+
+#                 if pdf_bytes and extract_securities_table_from_bytes:
+#                     print(f" [處理中] 已將 PDF 載入記憶體，開始提取目標表格...")
+#                     try:
+#                         df_table = extract_securities_table_from_bytes(pdf_bytes)
+#                     except Exception as parse_err:
+#                         print(f" ⚠️ [WARN] PDF 解析發生錯誤: {parse_err}")
+#                         df_table = None
+#                     if df_table is None:
+#                         print(f" ℹ️ [INFO] 此份報告中找不到『期末持有之重大有價證券』表格，略過。")
+#                     elif df_table.empty:
+#                         print(f" ⚠️ [WARN] 表格存在但內容為空，略過。")
+#                     else:
+#                         s_tag = f"Q{clean_s}" if raw_season and str(raw_season).strip() else "ALL"
+#                         out_excel_name = f"{co_id}_{job.get('year')}_{s_tag}_重大有價證券.xlsx"
+#                         out_path = dl_dir / out_excel_name
+#                         df_table.to_excel(out_path, index=False, engine='openpyxl')
+#                         print(f" 🎉 [OK] 成功提取表格並儲存至: {out_path.name}")
+#                         found_any = True                       
+#             except Exception as e:
+#                 print(f" ❌ [ERR] 處理 PDF 流程中斷: {e}")                
+#     return found_any
+
+
 def _download_and_extract_table(session: requests.Session, html: str, base: str, job: Dict, dl_dir: Path) -> bool:
     soup = BeautifulSoup(html, 'lxml')
     raw_season = job.get("season")
@@ -138,7 +210,6 @@ def _download_and_extract_table(session: requests.Session, html: str, base: str,
             data = {"step": "9", "kind": kind, "co_id": co_id, "filename": filename}
             
             try:
-                # 🎯 重試點 2: 模擬點擊下載按鈕的中轉請求
                 r_transit = _request_with_retry(session, "POST", dl_url, data=data, timeout=(30, 120), verify=False)
                 
                 pdf_bytes = b""
@@ -147,35 +218,38 @@ def _download_and_extract_table(session: requests.Session, html: str, base: str,
                     pdf_link = transit_soup.find("a", href=re.compile(r"\.pdf$", re.I))
                     if pdf_link and pdf_link.get("href"):
                         real_pdf_url = urljoin("https://doc.twse.com.tw", pdf_link["href"])
-                        
-                        # 🎯 重試點 3: 真正下載 PDF 串流檔案（檔案通常很大，給予 180 秒讀取超時）
                         r_pdf = _request_with_retry(session, "GET", real_pdf_url, timeout=(30, 180), verify=False)
                         pdf_bytes = r_pdf.content
                 else:
                     pdf_bytes = r_transit.content
 
-                if pdf_bytes and extract_securities_table_from_bytes:
-                    print(f" [處理中] 已將 PDF 載入記憶體，開始提取目標表格...")
+                # 💡 改動關鍵點：在此不再解析表格，而是直接抽取特定頁面並寫入成新 PDF
+                if pdf_bytes:
+                    print(f" [處理中] 已將原 PDF 載入記憶體，開始切片目標頁面...")
                     try:
-                        df_table = extract_securities_table_from_bytes(pdf_bytes)
+                        extracted_pdf_bytes = extract_securities_pdf_pages(pdf_bytes)
                     except Exception as parse_err:
-                        print(f" ⚠️ [WARN] PDF 解析發生錯誤: {parse_err}")
-                        df_table = None
-                    if df_table is None:
-                        print(f" ℹ️ [INFO] 此份報告中找不到『期末持有之重大有價證券』表格，略過。")
-                    elif df_table.empty:
-                        print(f" ⚠️ [WARN] 表格存在但內容為空，略過。")
+                        print(f" ⚠️ [WARN] PDF 定位或切片發生錯誤: {parse_err}")
+                        extracted_pdf_bytes = None
+
+                    if extracted_pdf_bytes is None:
+                        print(f" ℹ️ [INFO] 此份報告中找不到『期末持有之重大有價證券』相關頁面，略過。")
                     else:
                         s_tag = f"Q{clean_s}" if raw_season and str(raw_season).strip() else "ALL"
-                        out_excel_name = f"{co_id}_{job.get('year')}_{s_tag}_重大有價證券.xlsx"
-                        out_path = dl_dir / out_excel_name
-                        df_table.to_excel(out_path, index=False, engine='openpyxl')
-                        print(f" 🎉 [OK] 成功提取表格並儲存至: {out_path.name}")
-                        found_any = True                       
+                        
+                        # 🎯 更改副檔名為 .pdf
+                        out_pdf_name = f"{co_id}_{job.get('year')}_{s_tag}_重大有價證券.pdf"
+                        out_path = dl_dir / out_pdf_name
+                        
+                        # 以二進位寫入檔案
+                        with open(out_path, "wb") as f:
+                            f.write(extracted_pdf_bytes)
+                            
+                        print(f" 🎉 [OK] 成功提取目標頁面並儲存至: {out_path.name}")
+                        found_any = True                      
             except Exception as e:
                 print(f" ❌ [ERR] 處理 PDF 流程中斷: {e}")                
     return found_any
-
 
 def run_jobs_financial_reports(jobs: List[Dict], download_dir: str = "downloads"):
     dl_dir = Path(download_dir); dl_dir.mkdir(parents=True, exist_ok=True)
@@ -214,7 +288,7 @@ def run_jobs_financial_reports(jobs: List[Dict], download_dir: str = "downloads"
 
 
 # ==============================================================================
-# 📂 模組二（精準過濾版）：多種類公告整合爬蟲與標的物去股化
+# 📂 模組二：多種類公告整合爬蟲與標的物去股化
 # ==============================================================================
 
 def crawl_multiple_announcements(year: int, typek: str, download_dir: str = "downloads"):
