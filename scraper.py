@@ -12,7 +12,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 
-from lib.pdf_parser_fix import extract_securities_pdf_pages
+# from lib.pdf_parser_fix import extract_securities_table_from_bytes
+from lib.save_as_pdf import extract_securities_pdf_pages
 from lib.excel_writer import COLUMN_SPECS, resolve_official_col_name, save_records_to_excel
 
 try:
@@ -223,7 +224,6 @@ def _download_and_extract_table(session: requests.Session, html: str, base: str,
                 else:
                     pdf_bytes = r_transit.content
 
-                # 💡 改動關鍵點：在此不再解析表格，而是直接抽取特定頁面並寫入成新 PDF
                 if pdf_bytes:
                     print(f" [處理中] 已將原 PDF 載入記憶體，開始切片目標頁面...")
                     try:
@@ -236,12 +236,8 @@ def _download_and_extract_table(session: requests.Session, html: str, base: str,
                         print(f" ℹ️ [INFO] 此份報告中找不到『期末持有之重大有價證券』相關頁面，略過。")
                     else:
                         s_tag = f"Q{clean_s}" if raw_season and str(raw_season).strip() else "ALL"
-                        
-                        # 🎯 更改副檔名為 .pdf
                         out_pdf_name = f"{co_id}_{job.get('year')}_{s_tag}_重大有價證券.pdf"
                         out_path = dl_dir / out_pdf_name
-                        
-                        # 以二進位寫入檔案
                         with open(out_path, "wb") as f:
                             f.write(extracted_pdf_bytes)
                             
